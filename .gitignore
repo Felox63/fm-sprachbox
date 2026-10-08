@@ -1,0 +1,31 @@
+# Private runtime data and credentials
+data/
+.dev-data/
+logs/
+profiles/
+cookies/
+.env
+.env.*
+*.pem
+*.key
+# Generated output
+node_modules/
+out/
+dist/
+artifacts/
+coverage/
+*.log
+*.local
+*.pid
+.eslintcache
+# Local tooling and internal work records
+.hermes/
+HANDOFF*.md
+ARBEITSAUFTRAG*.md
+PLAN*.md
+IDEA.md
+review-*.json
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
