@@ -18,7 +18,7 @@
 
 ## Windows: starten und aktualisieren
 
-1. Einen freigegebenen Windows-x64-Testbuild aus **Releases** auswählen. Release-Entwürfe sind nicht öffentlich verfügbar; es gibt derzeit keinen zugesicherten öffentlichen Download.
+1. [Release 1.0 herunterladen](https://github.com/Felox63/fm-sprachbox/releases/tag/v1.0.0). Es enthält unverändert die auf Windows bestätigte ZIP 0.3.1-p3; die interne Versionsanzeige bleibt 0.3.1-p3. Der aktuelle Quellcode enthält darüber hinaus unfertige Paket-4-Arbeiten und entspricht nicht exakt dem historischen Download-Build.
 2. `FM-Sprachbox-win64.zip` in einen eigenen, beschreibbaren Ordner entpacken.
 3. `FM - Sprachbox.exe` starten und die gewünschten Messenger anmelden.
 
