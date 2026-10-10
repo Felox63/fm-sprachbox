@@ -1,33 +1,24 @@
-# Entwicklungsstatus und Veröffentlichungsgate
+# Technischer Stand
 
-## Gesicherter Stand
+## Release 1.1
 
-Der aktuelle Quellstand enthält die bestätigte Basis 0.3.1-p3 sowie noch nicht abgenommene Paket-4-Erweiterungen und die erste Tray-Korrektur. Er ist kein Ersatz für den bereits getesteten Release-Build. Eine historische exakte Quellzuordnung der älteren Release-ZIPs ist nicht zugesichert.
+Mehrkonten, Tray, externe Links, Benachrichtigungen mit Datenschutz und Neue-Nachricht-Punkt sind unter Windows von Felix bestätigt. Der veröffentlichte Download ist die unveränderte, getestete Alpha-4-ZIP.
 
-## Offene Punkte vor einem neuen freigegebenen Build
+- Interne Appversion: `1.1.0-alpha.4` (Releasebezeichnung: 1.1).
+- 335 automatisierte Tests; separat 25 Electron-Produktionspfadprüfpunkte. Lint, Typecheck, Build und Paketprüfung bestanden.
+- SHA-256: `2063b8cb3ba7b1fd6f21031e75e3e09b3af86b8a5fa6732d9885c0e1d6821ded`.
 
-- Tray: echte registrierte Close-/before-quit-/Cleanup-Handler testen; leere Icons, Constructor-Fehler, zerstörten Tray und explizites Beenden berücksichtigen.
-- Notifications: sichere funktionierende Brücke für WebContentsView statt webview-spezifischem sendToHost; Änderung der isolierten Preload-Welt allein ersetzt nicht die Notification-API der Messenger-Hauptwelt.
-- Datenschutz: bei ausgeblendeten Inhalten auch fremde Absender-/Chat-Titel verbergen.
-- Hintergrund: verborgenes oder minimiertes Fenster darf nicht als sichtbare Kontenansicht gelten.
-- Neue-Nachricht-Indikator: tatsächliche Signale darstellen; keine erfundenen Counts.
-- Links: Redirects/Subframes nicht automatisch im externen Browser öffnen; doppelte Öffnungen und Fehlerpfade prüfen.
-- Reale Windows-Abnahme der neuen Funktionen nach Korrektur.
+## Grenzen und offene technische Themen
 
-## Lokale Prüfungen der Repository-Vorbereitung
+- **Quellzuordnung:** Der GitHub-Quellstand ist älter als der Download. Tags und automatische Sourcearchive reproduzieren die veröffentlichten ZIPs nicht exakt. Das wird in einem künftigen Release vereinheitlicht.
+- **Abhängigkeiten:** Historische Auditprüfung meldete 15 Findings (11 moderate, 2 high, 2 critical). Nicht gezielt behoben; keine aktuelle vollständige Sicherheitsfreigabe.
+- **Benachrichtigungen:** Dokumentseitige Signale, keine vollständige Serviceworker-Abdeckung. Der Punkt ist nicht persistent und kein Gesamt-Ungelesenzähler.
+- **Distribution:** Keine signierte Windowsdistribution, keine automatischen Updates. Marken-/Assetprüfung offen; [Icon-Herkunft](../assets/service-icons/SOURCES.md).
+- **Profile:** Geräteübergreifende Login-Übernahme nicht garantiert. Entfernen eines Kontoeintrags löscht nicht dessen Profildaten; keine Oberfläche zur endgültigen Bereinigung.
+- Mikrofon, Kamera und Bildschirmfreigabe sind nicht freigegeben.
 
-Lint, Typecheck und Build erfolgreich; 176 Unit-Tests erfolgreich. Der frische Electron-Binärdownload scheiterte auf dem Vorbereitungshost; für den erfolgreichen Testlauf wurde die bereits installierte Electron-Binärdistribution des ursprünglichen Workspaces über ELECTRON_OVERRIDE_DIST_PATH verwendet. Keine Windows-Laufzeitprüfung in diesem Schritt.
+## Historischer Release 1.0
 
-`npm audit` meldet 15 Findings (11 moderate, 2 high, 2 critical) im Entwicklungs-/Build-Abhängigkeitsbaum. Diese müssen vor öffentlicher Distribution bewertet und gezielt behoben werden. Kein unkontrolliertes `npm audit fix --force` ausgeführt.
+Enthält den unveränderten Build `0.3.1-p3`: Mehrkonten und Kontenverwaltung, noch ohne die neuen Tray-/Benachrichtigungs-/Linkfunktionen. Bleibt als Rückweg verfügbar.
 
-## Vor öffentlicher Veröffentlichung
-
-- [ ] Obige Funktionsfehler beheben und Windows-Abnahme dokumentieren.
-- [ ] Quellcode und alte Git-Historie/Release-Inhalte auf private Daten prüfen.
-- [ ] Markenrechte und Verwendbarkeit aller Logos/Branding-Assets klären.
-- [ ] Abhängigkeiten auf bekannte Risiken prüfen; Findings bewerten.
-- [ ] Öffentlichen Download und Release-Notizen bewusst freigeben; Drafts nicht ungeprüft veröffentlichen.
-- [ ] Optional Code-Signing für Weitergabe einrichten.
-- [ ] Repository-Sichtbarkeit ausdrücklich freigeben.
-
-Die Dokumentation und Quellcodesicherung bereiten die Veröffentlichung vor. Sie sind keine Sicherheitszertifizierung oder automatische Freigabe zum öffentlichen Betrieb.
+Funktionierende Tests und Windows-Abnahme sind keine unabhängige Sicherheits- oder Markenrechtszertifizierung.

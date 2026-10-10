@@ -1,10 +1,10 @@
 # Mitwirken
 
-Bitte vor einer größeren Änderung ein Issue zur Abstimmung eröffnen. Kleine, klar abgegrenzte Änderungen sind leichter zu prüfen als mehrere Funktionspakete gleichzeitig.
+Danke für deine Unterstützung! Fehlerberichte, Ideen, Windows-Tests, Dokumentation und Codebeiträge sind willkommen. Größere Änderungen bitte zuerst in einem Issue abstimmen.
 
-## Lokale Prüfungen
+## Entwickeln
 
-Node.js 22+ und npm installieren, anschließend:
+Node.js 22+ und npm:
 
 ```bash
 npm ci --include=dev
@@ -14,13 +14,16 @@ npm run build
 npm run test:unit
 ```
 
-Tests müssen echte Produktionsfunktionen und registrierte Handler ausführen. Im Test kopierte Produktlogik ist kein belastbarer Regressionstest. Messenger-Anmeldung, Tray, Notifications und DPI-Verhalten separat auf Windows prüfen und nicht aus grünen Unit-Tests ableiten.
+Der GitHub-Quellstand entspricht noch nicht vollständig dem aktuellen Download; siehe [Status](docs/STATUS.md).
 
 ## Pull Requests
 
-- Ziel, Änderungen, tatsächliche Prüfergebnisse und Grenzen nennen.
-- Keine Profile, Cookies, QR-Codes, persönlichen Nachrichten, Schlüssel oder `.env`-Dateien committen.
-- Bestehende Profilpfade und stabile Konto-IDs erhalten; Datenmigrationen benötigen Backup und Schutz vor unbekannten neueren Konfigurationsversionen.
-- Sandbox, Navigation, Berechtigungen und IPC-Validierung nicht lockern.
-- Keine Screenshots mit privaten Inhalten. Screenshots nur mit neutralen Testdaten.
-- Abhängigkeiten und Assets mit Herkunft und Lizenz dokumentieren.
+- Kleine, klar abgegrenzte Änderung mit Beschreibung und tatsächlichen Testergebnissen.
+- Echte Produktionspfade testen; Messenger-Funktionen zusätzlich auf Windows prüfen.
+- Keine Anmeldedaten, Profile, privaten Nachrichten oder Schlüssel einchecken.
+- Bestehende Konten und Profile erhalten; Sicherheitsgrenzen nicht lockern.
+- Neue Assets und Abhängigkeiten mit Herkunft und Lizenz dokumentieren.
+
+## Bei jedem Release
+
+README, Roadmap, Downloadlink und technischen Status zusammen mit den kurzen Release-Notizen aktualisieren. Abgeschlossene Punkte aus der Roadmap entfernen. Bekannte Grenzen im technischen Status dokumentieren, nicht die Startseite damit überladen.
