@@ -1,6 +1,6 @@
 {
   "name": "fm-sprachbox",
-  "version": "0.3.1-p3",
+  "version": "1.2.0",
   "description": "FM - Sprachbox: portable WhatsApp/Telegram Wrapper für Windows",
   "author": "Felix <md@merkeldesign.biz> und Hermes (KI-Entwicklungspartner)",
   "license": "MIT",
@@ -10,6 +10,7 @@
   "scripts": {
     "lint": "eslint src tests scripts --ext .ts,.tsx,.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.messenger-preload.json --noEmit",
+    "pretest:unit": "npm run build:preload:messenger",
     "test:unit": "vitest run tests/unit",
     "smoke:p2": "node scripts/with-xvfb.mjs",
     "build": "npm run clean && npm run build:main && npm run build:preload && npm run build:preload:messenger && npm run build:renderer && npm run copy:assets",

@@ -15,6 +15,10 @@ import { createRuntime } from './app.js'
 import { getUserAgentSource } from './user-agent.js'
 import { type AccountDefinition } from '../shared/accounts.js'
 import { createTrayController, type TrayController } from './tray.js'
+import {
+  registerTrayWindowCloseHandler,
+  registerAppTrayQuitHandlers,
+} from './tray-lifecycle.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -30,6 +34,8 @@ const runtimeState: RuntimeState = {
   serviceConfig: { version: 2 as const, accounts: [] as AccountDefinition[], selectedAccountId: null as string | null, preferences: undefined },
   lastConfigSaveError: 'none' as 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly',
   trayController: null as TrayController | null,
+  accountBadges: new Set<string>(),
+  focusDiagnostic: null as import('./app.js').FocusDiagnosticLogger | null,
 }
 
 let portablePaths: PortablePaths
@@ -132,39 +138,16 @@ if (acquireSingleInstance(app, () => {
         window: win,
         persistMinimizeToTray: (value) => runtime.persistConfigPreference('minimizeToTray', value),
       })
-      win.on('close', (event) => {
-        if (!(runtimeState.serviceConfig.preferences?.minimizeToTray ?? false)) {
-          // minimizeToTray is disabled: let the close go through normally.
-          return
-        }
-        if (trayController?.isQuitting ?? false) {
-          // Explicit quit path: close normally.
-          return
-        }
-        // Only hide to tray when a working tray actually exists; otherwise fall
-        // through to normal close/quit so the process never becomes invisible.
-        const tray = trayController?.ensureTray?.()
-        if (tray != null && !tray.isDestroyed()) {
-          event.preventDefault()
-          win.hide()
-        }
-      })
+      registerTrayWindowCloseHandler(
+        win,
+        trayController,
+        () => runtimeState.serviceConfig.preferences?.minimizeToTray ?? false,
+      )
     }
   })
 
-  app.on('before-quit', () => {
-    // Mark that the app is quitting so the window close handler does not
-    // intercept it and leave a hidden process behind.
-    if (trayController != null) {
-      trayController.isQuitting = true
-    }
-  })
-
-  app.on('window-all-closed', () => {
-    trayController?.destroy()
-    trayController = null
-    runtimeState.trayController = null
-    app.quit()
+  registerAppTrayQuitHandlers(app, () => trayController, runtimeState, {
+    onTrayDestroyed: () => { trayController = null },
   })
 
   app.on('web-contents-created', (_event, webContents) => {

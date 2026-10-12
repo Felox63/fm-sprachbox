@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { type ServiceDefinition } from '../shared/services.js'
+import { type ServiceDefinition, getAllowedServiceOrigins } from '../shared/services.js'
 
 /**
  * Validate a URL before opening it in the system default browser.
@@ -28,13 +28,40 @@ export function isSafeExternalUrl (url: string): boolean {
   return true
 }
 
+function hostnameMatchesPattern (hostname: string, pattern: string): boolean {
+  if (pattern.startsWith('*.')) {
+    const suffix = pattern.slice(1) // includes leading dot, e.g. ".slack.com"
+    if (!hostname.endsWith(suffix)) return false
+    const prefix = hostname.slice(0, -suffix.length)
+    // Require exactly one non-empty DNS label before the suffix. This blocks
+    // lookalikes such as evil.com/.slack.com and multi-level subdomains that
+    // do not correspond to documented Slack workspace URLs.
+    if (prefix.length === 0 || prefix.includes('.')) return false
+    return true
+  }
+  return hostname === pattern
+}
+
 export function isAllowedServiceNavigation (service: ServiceDefinition, url: string): boolean {
   if (url === 'about:blank') return true
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
-    const serviceOrigin = new URL(service.url).origin
-    return parsed.origin === serviceOrigin
+    // Fail-closed: reject URLs that embed credentials. Legitimate services never
+    // require userinfo in navigation URLs and it is a common phishing vector.
+    if (parsed.username.length > 0 || parsed.password.length > 0) return false
+
+    // Exact configured origins are always allowed.
+    if (getAllowedServiceOrigins(service).includes(parsed.origin)) return true
+
+    // Host patterns are restricted to HTTPS on the default port.
+    if (service.allowedHostPatterns != null && service.allowedHostPatterns.length > 0) {
+      if (parsed.protocol !== 'https:') return false
+      if (parsed.port.length > 0) return false
+      if (service.allowedHostPatterns.some((pattern) => hostnameMatchesPattern(parsed.hostname, pattern))) return true
+    }
+
+    return false
   } catch {
     return false
   }

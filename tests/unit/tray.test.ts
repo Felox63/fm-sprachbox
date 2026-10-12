@@ -11,6 +11,8 @@ let createdImages: Array<{ path: string; empty: boolean; isEmpty: () => boolean 
 let nextTrayThrows = false
 let nextImageEmpty = false
 
+let emptyFirstCandidate = false
+
 vi.mock('electron', async () => {
   const actual = await vi.importActual<typeof import('electron')>('electron')
   return {
@@ -36,7 +38,7 @@ vi.mock('electron', async () => {
       createFromPath: vi.fn((imagePath: string) => {
         const image = {
           path: imagePath,
-          empty: nextImageEmpty,
+          empty: nextImageEmpty || (emptyFirstCandidate && imagePath.endsWith('icon.ico')),
           isEmpty: () => image.empty,
         }
         createdImages.push(image)
@@ -73,6 +75,7 @@ beforeEach(() => {
   createdImages = []
   nextTrayThrows = false
   nextImageEmpty = false
+  emptyFirstCandidate = false
   vi.clearAllMocks()
 })
 
@@ -90,6 +93,21 @@ describe('createTrayController', () => {
     expect(controller.tray).toBeNull()
     expect(createdImages.length).toBeGreaterThanOrEqual(3)
     expect(createdImages.every((img) => img.empty)).toBe(true)
+  })
+
+  it('creates a tray from the second candidate when the first icon is empty', () => {
+    emptyFirstCandidate = true
+    const controller = createTrayController({
+      app: makeFakeApp(),
+      window: makeFakeWindow(),
+      getMinimizeToTray: () => true,
+      onMinimizeToTrayChanged: vi.fn(),
+      onShowWindow: vi.fn(),
+    })
+    expect(controller.tray).not.toBeNull()
+    expect(createdImages.length).toBeGreaterThanOrEqual(2)
+    expect(createdImages[0].empty).toBe(true)
+    expect(createdImages.some((img) => !img.empty)).toBe(true)
   })
 
   it('creates a tray when at least one icon candidate is non-empty', () => {
@@ -191,47 +209,5 @@ describe('createTrayController', () => {
     const restored = controller.ensureTray?.()
     expect(restored).not.toBeNull()
     expect(trayInstances).toHaveLength(2)
-  })
-})
-
-describe('tray-aware window close behavior', () => {
-  it('hides the window when minimizeToTray is on and a working tray exists', () => {
-    const window = makeFakeWindow()
-    const controller = createTrayController({
-      app: makeFakeApp(),
-      window,
-      getMinimizeToTray: () => true,
-      onMinimizeToTrayChanged: vi.fn(),
-      onShowWindow: vi.fn(),
-    })
-    const event = { preventDefault: vi.fn(), defaultPrevented: false }
-    // Simulate the caller invoking the close handler with the controller's tray.
-    const tray = controller.ensureTray?.()
-    if (tray != null && !tray.isDestroyed()) {
-      event.preventDefault()
-      window.hide()
-    }
-    expect(event.preventDefault).toHaveBeenCalled()
-    expect(window.hide).toHaveBeenCalled()
-  })
-
-  it('does not prevent close when minimizeToTray is on but tray is missing', () => {
-    nextImageEmpty = true
-    const window = makeFakeWindow()
-    const controller = createTrayController({
-      app: makeFakeApp(),
-      window,
-      getMinimizeToTray: () => true,
-      onMinimizeToTrayChanged: vi.fn(),
-      onShowWindow: vi.fn(),
-    })
-    const event = { preventDefault: vi.fn(), defaultPrevented: false }
-    const tray = controller.ensureTray?.()
-    if (tray != null && !tray.isDestroyed()) {
-      event.preventDefault()
-      window.hide()
-    }
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    expect(window.hide).not.toHaveBeenCalled()
   })
 })

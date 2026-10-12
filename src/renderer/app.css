@@ -109,6 +109,16 @@ html, body, #root {
   min-width: 0;
 }
 
+.service-item-badge {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-left: auto;
+  box-shadow: 0 0 0 2px var(--bg-secondary);
+}
+
 .sidebar-footer {
   padding: 12px 16px;
   font-size: 11px;
@@ -246,6 +256,31 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.account-actions .secondary-button {
+  padding: 8px 10px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.account-actions .secondary-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.account-actions .move-button {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .add-account-form {
   padding-top: 4px;
 }
@@ -372,6 +407,63 @@ html, body, #root {
   margin: 0 0 16px;
   color: var(--text-primary);
   font-size: 18px;
+}
+
+.diagnostic-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.diagnostic-section h2 {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.diagnostic-desc {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.diagnostic-active,
+.diagnostic-stopped {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diagnostic-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.danger-button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  background: #ef4444;
+  color: #fff;
+}
+
+.danger-button:hover {
+  background: #dc2626;
 }
 
 .preference-list {

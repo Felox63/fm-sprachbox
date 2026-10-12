@@ -34,6 +34,9 @@ export const LEGACY_ACCOUNT_IDS: Record<ServiceId, string> = {
 export const SERVICE_ICON_ASSETS: Record<ServiceId, string> = {
   whatsapp: 'assets/service-icons/whatsapp.svg',
   telegram: 'assets/service-icons/telegram.svg',
+  slack: 'assets/service-icons/slack.svg',
+  discord: 'assets/service-icons/discord.svg',
+  'whatsapp-business': 'assets/service-icons/whatsapp-business.svg',
 }
 
 export type { ServiceId } from './services.js'

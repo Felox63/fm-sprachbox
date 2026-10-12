@@ -1,11 +1,12 @@
-import { WebContentsView, session, shell, type Session, type WebContents } from 'electron'
+import { WebContentsView, session, type Session, type WebContents } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getAccountProfilePath } from './service-config.js'
 import { type PortablePaths } from './portable-paths.js'
-import { getServiceDefinition, type ServiceDefinition } from '../shared/services.js'
+import { getServiceDefinition, type ServiceDefinition, getAllowedServiceOrigins } from '../shared/services.js'
 import { type AccountDefinition } from '../shared/accounts.js'
-import { isAllowedServiceNavigation, isSafeExternalUrl } from './navigation-policy.js'
+import { isAllowedServiceNavigation } from './navigation-policy.js'
+import { attachSafeLinkContextMenu, isTrustedSourceUrl } from './safe-links.js'
 import { buildServiceUserAgent, type UserAgentSource } from './user-agent.js'
 import { installNotificationBridgeForWebContents, type NotificationBridgeOptions } from './notifications.js'
 
@@ -24,6 +25,7 @@ export interface MessengerView {
 export interface CreateMessengerViewOptions {
   userAgentSource?: UserAgentSource
   notificationBridge?: NotificationBridgeOptions
+  isAccountActive?: () => boolean
 }
 
 /**
@@ -43,12 +45,8 @@ function isAllowedPermission (permission: string): boolean {
 }
 
 function isServiceOrigin (service: ServiceDefinition, origin: string): boolean {
-  if (origin == null) return false
-  try {
-    return new URL(origin).origin === new URL(service.url).origin
-  } catch {
-    return false
-  }
+  if (!isTrustedSourceUrl(origin)) return false
+  return getAllowedServiceOrigins(service).includes(new URL(origin).origin)
 }
 
 /**
@@ -102,6 +100,7 @@ export function createMessengerView (
     enableWebSQL: false,
     session: ses,
     preload: MESSENGER_PRELOAD_PATH,
+    additionalArguments: service.id === 'telegram' ? ['--fm-telegram-links'] : [],
   }
 
   const view = new WebContentsView({ webPreferences })
@@ -153,39 +152,71 @@ export function createMessengerView (
     ownWebContents.setUserAgent(userAgent)
   }
 
-  const guard = (_event: Electron.Event, url: string): void => {
+  /**
+   * Block off-origin top-level navigation and redirects unconditionally.
+   * will-navigate / will-redirect can be triggered programmatically (remote JS,
+   * meta refresh, OAuth redirects). Opening the system browser for these is not
+   * safe; we only allow the service origin or about:blank.
+   */
+  const blockOffOriginNavigation = (_event: Electron.Event, url: string): void => {
     if (!isAllowedServiceNavigation(service, url)) {
       _event.preventDefault()
-      if (isSafeExternalUrl(url)) {
-        void shell.openExternal(url)
-      } else {
-        console.warn(`[${service.id}] Blocked off-origin navigation`)
-      }
+      console.warn(`[${service.id}] Blocked off-origin navigation`)
     }
   }
 
-  ownWebContents.on('will-navigate', guard)
-  ownWebContents.on('will-redirect', guard)
+  ownWebContents.on('will-navigate', blockOffOriginNavigation)
+  ownWebContents.on('will-redirect', blockOffOriginNavigation)
+
+  /**
+   * Block off-origin subframe navigation/redirects unconditionally. Subframes
+   * never represent a user choosing to open an external link, and WhatsApp uses
+   * frames such as webtp.whatsapp.net and flows.whatsapp.net internally.
+   * Opening the system browser here is a routing bug.
+   */
   ownWebContents.on('will-frame-navigate', (event) => {
     if (!isAllowedServiceNavigation(service, event.url)) {
       event.preventDefault()
-      if (isSafeExternalUrl(event.url)) {
-        void shell.openExternal(event.url)
-      } else {
-        console.warn(`[${service.id}] Blocked off-origin frame navigation`)
-      }
+      console.warn(`[${service.id}] Blocked off-origin frame navigation`)
     }
   })
+
+  /**
+   * setWindowOpenHandler is triggered for any new-window request including
+   * target="_blank", window.open(), and form targets. Electron does not
+   * guarantee a user gesture here, so we fail-closed: external browser opening is
+   * denied by default. The handler only logs and denies; shell.openExternal is
+   * never called. If a future UX design adds an explicit "open in browser" user
+   * action, it must route through a trusted IPC from the shell, not through
+   * this handler.
+   */
   ownWebContents.setWindowOpenHandler((details) => {
-    if (isSafeExternalUrl(details.url)) {
-      void shell.openExternal(details.url)
-    } else if (isAllowedServiceNavigation(service, details.url)) {
-      // Service URLs should navigate inside the existing view, not open a popup.
+    if (isAllowedServiceNavigation(service, details.url)) {
       console.warn(`[${service.id}] Blocked service popup`)
     } else {
-      console.warn(`[${service.id}] Blocked unsafe popup`)
+      console.warn(`[${service.id}] Blocked popup (no trusted user action)`)
     }
     return { action: 'deny' }
+  })
+
+  /**
+   * Trusted user action path for opening external links. Only a context-menu
+   * invocation on the exact WebContents we created, followed by an explicit
+   * "Im Browser öffnen" selection in a main-process menu, may open the system
+   * browser. Service-origin links stay in-app; unsafe schemes/credentials are
+   * rejected; overlapping opens are deduplicated.
+   *
+   * Telegram suppresses the main-process context-menu event by drawing its own
+   * DOM context menu, so for Telegram we also enable a narrow click-bridge:
+   * real (isTrusted) left-clicks on safe external http(s) links are forwarded
+   * from the isolated preload to the main process, which validates identity/origin
+   * again and shows a native confirmation dialog before opening the browser.
+   */
+  attachSafeLinkContextMenu(ownWebContents, {
+    isServiceUrl: (url) => isAllowedServiceNavigation(service, url),
+    isServiceOrigin: (origin) => isServiceOrigin(service, origin),
+    enableClickBridge: service.id === 'telegram',
+    isAccountActive: options?.isAccountActive ?? (() => false),
   })
 
   const accountInfo = { accountId, serviceId: service.id, displayName: account.displayName }

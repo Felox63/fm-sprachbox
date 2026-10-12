@@ -1,9 +1,11 @@
-import { BaseWindow, WebContentsView, ipcMain, screen, dialog, shell, type IpcMainEvent, type WebFrameMain } from 'electron'
+import { BaseWindow, WebContentsView, ipcMain, screen, dialog, type IpcMainEvent, type WebFrameMain } from 'electron'
 import path from 'node:path'
 import { createMessengerView, destroyMessengerView, type MessengerView } from './messenger-view.js'
 import {
   isKnownServiceId,
   type ServiceId,
+  SUPPORTED_SERVICES,
+  getServiceDefinition,
 } from '../shared/services.js'
 import {
   type AccountDefinition,
@@ -11,7 +13,7 @@ import {
   sanitizeDisplayName,
   MAX_ACCOUNTS,
 } from '../shared/accounts.js'
-import { isAllowedShellNavigation, isSafeExternalUrl, getShellIndexUrl } from './navigation-policy.js'
+import { isAllowedShellNavigation, getShellIndexUrl, isAllowedServiceNavigation } from './navigation-policy.js'
 import { type PortablePaths } from './portable-paths.js'
 import {
   saveServiceConfig,
@@ -20,12 +22,17 @@ import {
   setAccountEnabled,
   setSelectedAccountId,
   setAppPreferences,
+  moveAccount,
   type ServiceConfigV2,
   type SaveResult,
   type AppPreferences,
+  type MoveAccountDirection,
 } from './service-config.js'
 import { type UserAgentSource } from './user-agent.js'
 import { type NotificationBridgeOptions } from './notifications.js'
+import { FocusDiagnosticLogger, type FocusDiagnosticState } from './focus-diagnostic.js'
+
+export { FocusDiagnosticLogger } from './focus-diagnostic.js'
 
 const SIDEBAR_WIDTH = 220
 const MIN_CONTENT_WIDTH = 480
@@ -64,12 +71,16 @@ export interface MessengerRuntimeState {
   pendingLoad: boolean
   /** Incremented on every loadURL() call. Old load promises are ignored. */
   loadGeneration: number
+  /** Last logged visibility state to avoid duplicate diagnostic entries. */
+  lastVisible?: boolean
 }
 
 export interface ConfigChangePayload {
   accounts: AccountDefinition[]
   preferences: AppPreferences
   saveError?: 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly'
+  /** Account ids with a new-message indicator from the verified notification bridge. */
+  accountBadges?: string[]
 }
 
 export interface ShellStatePayload {
@@ -83,32 +94,31 @@ export interface ShellStatePayload {
  * and before any loadURL/loadFile call, so there is no race with early events.
  */
 export function attachRemoteGuards (wc: Electron.WebContents): void {
-  wc.setWindowOpenHandler((details) => {
-    if (isSafeExternalUrl(details.url)) {
-      void shell.openExternal(details.url)
-    }
-    return { action: 'deny' }
-  })
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }))
 
+  // will-navigate / will-redirect can fire for programmatic navigations (remote
+  // JS, meta refresh, service redirects). We never treat them as a user choosing
+  // to open an external link, so we block off-origin destinations without
+  // calling shell.openExternal.
   wc.on('will-navigate', (event, url) => {
     if (!isServiceUrl(url)) {
       event.preventDefault()
-      if (isSafeExternalUrl(url)) {
-        void shell.openExternal(url)
-      } else {
-        console.warn('Blocked navigation')
-      }
+      console.warn('Blocked navigation')
     }
   })
 
   wc.on('will-redirect', (event, url) => {
     if (!isServiceUrl(url)) {
       event.preventDefault()
-      if (isSafeExternalUrl(url)) {
-        void shell.openExternal(url)
-      } else {
-        console.warn('Blocked redirect')
-      }
+      console.warn('Blocked redirect')
+    }
+  })
+
+  // Subframe navigation/redirects are never user-initiated external links.
+  wc.on('will-frame-navigate', (event) => {
+    if (!isServiceUrl(event.url)) {
+      event.preventDefault()
+      console.warn('Blocked frame navigation')
     }
   })
 }
@@ -158,17 +168,7 @@ export function isServiceUrl (url: string): boolean {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
-    return isKnownServiceIdServiceUrl(url)
-  } catch {
-    return false
-  }
-}
-
-function isKnownServiceIdServiceUrl (url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    const knownOrigins = ['https://web.whatsapp.com', 'https://web.telegram.org']
-    return knownOrigins.includes(parsed.origin)
+    return SUPPORTED_SERVICES.some((service) => isAllowedServiceNavigation(service, url))
   } catch {
     return false
   }
@@ -188,6 +188,11 @@ function validateAccountId (value: unknown): string | null {
 
 function validateBoolean (value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
+}
+
+function validateMoveDirection (value: unknown): MoveAccountDirection | null {
+  if (value === 'up' || value === 'down') return value
+  return null
 }
 
 function sanitizeErrorDescription (code: number): LoadErrorCode {
@@ -212,6 +217,7 @@ export interface IpcDependencies {
   setAccountEnabled: (accountId: string, enabled: boolean) => void
   addAccount: (serviceId: ServiceId, displayName?: string) => boolean
   renameAccount: (accountId: string, displayName: string) => boolean
+  moveAccount: (accountId: string, direction: MoveAccountDirection) => boolean
   persistConfigPreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void
 }
 
@@ -307,6 +313,20 @@ export function registerIpcHandlers (deps: IpcDependencies): void {
     }
   })
 
+  ipcMain.on('move-account', (event: IpcMainEvent, accountId: unknown, direction: unknown) => {
+    if (!isShellMainFrame(deps.shellViewRef.current, event.sender, event.senderFrame, deps.rendererRoot)) {
+      console.warn('Ignoring move-account from untrusted sender')
+      return
+    }
+    const validatedId = validateAccountId(accountId)
+    const validatedDirection = validateMoveDirection(direction)
+    if (validatedId == null || validatedDirection == null) {
+      console.warn('Ignoring invalid move-account request')
+      return
+    }
+    deps.moveAccount(validatedId, validatedDirection)
+  })
+
   ipcMain.on('get-portable-paths', (event: IpcMainEvent) => {
     if (!isShellMainFrame(deps.shellViewRef.current, event.sender, event.senderFrame, deps.rendererRoot)) {
       event.returnValue = { error: 'untrusted sender' }
@@ -396,6 +416,12 @@ export interface RuntimeState {
   /** Last persistent save result so the UI can surface a config write error. */
   lastConfigSaveError: ConfigChangePayload['saveError']
   trayController: import('./tray.js').TrayController | null
+  /** In-memory account ids with a new-message indicator from the verified bridge. */
+  accountBadges: Set<string>
+  /** Data-sparse focus diagnostic logger; disabled by default. */
+  focusDiagnostic: FocusDiagnosticLogger | null
+  /** Last logged overlay state to avoid duplicate diagnostic entries. */
+  lastOverlayActive?: boolean
 }
 
 export interface RuntimeDependencies {
@@ -414,15 +440,44 @@ export function createRuntime (deps: RuntimeDependencies): {
   sendAccountList: () => void
   registerIpc: () => void
   persistConfigPreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void
+  focusDiagnostic: FocusDiagnosticLogger
 } {
   const { app, state, rendererRoot, portablePaths, preloadPath, userAgentSource } = deps
+
+  const focusDiagnostic = new FocusDiagnosticLogger({
+    logsDir: portablePaths.logs,
+    getActiveAccountId: () => state.activeAccountId,
+    getShellView: () => state.shellView,
+    isMessengerWebContents: (wc) => {
+      for (const entry of state.messengers.values()) {
+        if (entry.messenger.webContents === wc) return true
+      }
+      return false
+    },
+    isServiceUrl: (url, wc) => {
+      for (const [id, entry] of state.messengers) {
+        if (entry.messenger.webContents !== wc) continue
+        const account = state.serviceConfig.accounts.find((a) => a.accountId === id && a.enabled)
+        if (account == null) return false
+        return isAllowedServiceNavigation(getServiceDefinition(account.serviceId), url)
+      }
+      return false
+    },
+    notifyState: (nextState: FocusDiagnosticState) => {
+      state.shellView?.webContents.send('fm-focus-diagnostic-state', nextState)
+    },
+  })
+  state.focusDiagnostic = focusDiagnostic
+
+  function isEntryOverlayActive (entry: MessengerRuntimeState): boolean {
+    return entry.loadState.loading || entry.loadState.failed
+  }
 
   function isOverlayActive (): boolean {
     if (state.showingHome) return false
     if (state.activeAccountId == null) return false
     const entry = state.messengers.get(state.activeAccountId)
-    if (!entry) return false
-    return entry.loadState.loading || entry.loadState.failed
+    return entry != null && isEntryOverlayActive(entry)
   }
 
   function sendAccountList (): void {
@@ -435,6 +490,7 @@ export function createRuntime (deps: RuntimeDependencies): {
         notificationHideContent: true,
       },
       saveError: state.lastConfigSaveError,
+      accountBadges: [...state.accountBadges],
     }
     state.shellView.webContents.send('accounts', payload)
   }
@@ -464,11 +520,31 @@ export function createRuntime (deps: RuntimeDependencies): {
 
   function attachLoadListeners (accountId: string, entry: MessengerRuntimeState): void {
     const wc = entry.messenger.view.webContents
-    wc.on('did-start-loading', () => {
+    // Generic loading also fires for subframes and same-document activity.
+    // Hiding a live editor for those events drops its native keyboard focus.
+    // Only a main-frame document replacement requires a loading overlay.
+    wc.on('did-start-navigation', (details, _url, isInPlace, isMainFrame) => {
+      const mainFrame = details.isMainFrame ?? isMainFrame
+      const sameDocument = details.isSameDocument ?? isInPlace
+      if (mainFrame !== true || sameDocument !== false) return
       updateRemoteLoadState(accountId, { loading: true, failed: false })
     })
     wc.on('did-stop-loading', () => {
       updateRemoteLoadState(accountId, { loading: false })
+    })
+    wc.on('did-finish-load', () => {
+      // If the diagnostic is already running when a view (re)loads, the fresh
+      // preload starts with running=false. Send an explicit start so DOM events
+      // are captured immediately without waiting for the next toggle.
+      if (focusDiagnostic.getState().enabled) {
+        try {
+          if (!wc.isDestroyed()) {
+            wc.send('fm-focus-diagnostic-control', { command: 'start' })
+          }
+        } catch (err) {
+          console.warn('[focus-diagnostic] Failed to sync start to reloaded view:', err)
+        }
+      }
     })
     wc.on('did-fail-load', (_event: Electron.Event, errorCode: number, _errorDescription: string, _validatedURL: string, isMainFrame: boolean) => {
       // Only treat main-frame failures as fatal. Subframe/aborted errors should
@@ -501,11 +577,28 @@ export function createRuntime (deps: RuntimeDependencies): {
     })
   }
 
+  function isAccountWindowVisible (accountId: string): boolean {
+    // "Visible" means the account is the currently selected one AND the main
+    // window is actually shown, not minimized and focused. A hidden tray
+    // window must not suppress notifications. If a loading/error overlay hides
+    // the messenger view the user is not looking at the chat, so the
+    // notification must still be shown.
+    if (state.activeAccountId !== accountId) return false
+    const win = state.mainWindow
+    if (win == null || win.isDestroyed()) return false
+    if (!win.isVisible()) return false
+    if (win.isMinimized()) return false
+    if (!win.isFocused()) return false
+    if (isOverlayActive()) return false
+    return true
+  }
+
   function buildNotificationBridge (): NotificationBridgeOptions {
     return {
       getPreferences: () => state.serviceConfig.preferences,
       getEnabledAccounts: () => [...state.serviceConfig.accounts],
       getActiveAccountId: () => state.activeAccountId,
+      isAccountWindowVisible,
       onNotificationClicked: (accountId) => {
         const win = state.mainWindow
         if (win != null && !win.isDestroyed()) {
@@ -515,6 +608,20 @@ export function createRuntime (deps: RuntimeDependencies): {
         }
         showAccount(accountId)
       },
+      onNotificationIndicator: (accountId) => {
+        // Only set a badge if the account still exists and is enabled. The bridge
+        // already filters, but we re-check against the current config here because
+        // the runtime state can change between bridge installation and signal time.
+        if (!state.serviceConfig.accounts.some((a) => a.accountId === accountId && a.enabled)) return
+        // Opening the account clears its badge. We intentionally do not clear the
+        // badge just because the account is selected while the window is hidden;
+        // the user must have consciously opened it.
+        if (state.activeAccountId === accountId && isAccountWindowVisible(accountId)) {
+          return
+        }
+        state.accountBadges.add(accountId)
+        sendAccountList()
+      },
     }
   }
 
@@ -523,9 +630,16 @@ export function createRuntime (deps: RuntimeDependencies): {
     if (!entry) {
       const account = state.serviceConfig.accounts.find((a) => a.accountId === accountId)
       if (!account) return null
-      const messenger = createMessengerView(account, portablePaths, { userAgentSource, notificationBridge: buildNotificationBridge() })
+      const messenger = createMessengerView(account, portablePaths, {
+        userAgentSource,
+        notificationBridge: buildNotificationBridge(),
+        isAccountActive: () => state.messengers.get(accountId)?.messenger === messenger
+          && state.serviceConfig.accounts.some((a) =>
+          a.accountId === accountId && a.serviceId === account.serviceId && a.enabled),
+      })
       registerRemoteView(messenger)
       state.mainWindow?.contentView.addChildView(messenger.view)
+      focusDiagnostic.bindMessengerWebContents(messenger.webContents, accountId)
       entry = {
         messenger,
         loadState: {
@@ -569,14 +683,34 @@ export function createRuntime (deps: RuntimeDependencies): {
   function updateAccountEnabled (accountId: string, enabled: boolean): void {
     const account = state.serviceConfig.accounts.find((a) => a.accountId === accountId)
     if (!account) return
+    if (account.enabled === enabled) return
     const nextConfig = setAccountEnabled(state.serviceConfig, accountId, enabled)
     persistConfig(nextConfig)
 
-    if (!enabled && state.activeAccountId === accountId) {
-      // Deactivating the currently active account returns to the home screen.
-      // The messenger view is hidden but NOT destroyed; existing login data is
-      // preserved in the isolated profile.
-      showHome()
+    // Only apply runtime consequences if the save actually succeeded. If the
+    // config is read-only or the write failed we must not pretend the account
+    // was disabled: the badge stays and the active account remains visible.
+    const savedAccount = state.serviceConfig.accounts.find((a) => a.accountId === accountId)
+    const saveSucceeded = state.lastConfigSaveError === 'none' && savedAccount?.enabled === enabled
+    if (!saveSucceeded) return
+
+    if (!enabled) {
+      // Deactivating an account removes its badge. A disabled/removed account
+      // must not advertise an indicator. Clear before sending so the next
+      // accounts payload reflects the removal immediately.
+      state.accountBadges.delete(accountId)
+      sendAccountList()
+
+      if (state.activeAccountId === accountId) {
+        // Deactivating the currently active account returns to the home screen.
+        // The messenger view is hidden but NOT destroyed; existing login data is
+        // preserved in the isolated profile.
+        showHome()
+      }
+    } else {
+      // Re-enabling an account must not carry over a stale badge.
+      state.accountBadges.delete(accountId)
+      sendAccountList()
     }
   }
 
@@ -591,6 +725,13 @@ export function createRuntime (deps: RuntimeDependencies): {
   function addNewAccount (serviceId: ServiceId, displayName?: string): boolean {
     if (state.serviceConfig.accounts.length >= MAX_ACCOUNTS) return false
     const nextConfig = addAccount(state.serviceConfig, serviceId, displayName)
+    if (!nextConfig) return false
+    persistConfig(nextConfig)
+    return true
+  }
+
+  function moveAccountPosition (accountId: string, direction: MoveAccountDirection): boolean {
+    const nextConfig = moveAccount(state.serviceConfig, accountId, direction)
     if (!nextConfig) return false
     persistConfig(nextConfig)
     return true
@@ -656,10 +797,19 @@ export function createRuntime (deps: RuntimeDependencies): {
   function relayout (): void {
     if (!state.mainWindow || !state.shellView) return
     const overlayActive = isOverlayActive()
+    const previousOverlay = state.lastOverlayActive ?? false
+    if (overlayActive !== previousOverlay) {
+      state.lastOverlayActive = overlayActive
+      focusDiagnostic.logOverlayChange(overlayActive)
+    }
     // Hide the active remote view during loading/error overlays so the React
     // overlay is fully visible and clickable. Inactive views stay hidden.
     for (const [id, m] of state.messengers) {
       const visible = id === state.activeAccountId && !overlayActive
+      if (m.lastVisible !== visible) {
+        m.lastVisible = visible
+        focusDiagnostic.logMessengerVisible(id, visible)
+      }
       m.messenger.view.setVisible(visible)
     }
     layoutViews(
@@ -669,15 +819,21 @@ export function createRuntime (deps: RuntimeDependencies): {
       state.showingHome,
       overlayActive,
     )
+    focusDiagnostic.logBounds(state.mainWindow.getContentBounds())
   }
 
   function showAccount (accountId: string): void {
     if (!state.mainWindow || !state.shellView) return
     if (!state.serviceConfig.accounts.some((a) => a.accountId === accountId && a.enabled)) return
 
+    // Consciously opening an account clears its new-message indicator.
+    state.accountBadges.delete(accountId)
+
     state.showingHome = false
     const entry = ensureMessenger(accountId)
     if (!entry) {
+      state.accountBadges.delete(accountId)
+      sendAccountList()
       showHome()
       return
     }
@@ -687,6 +843,7 @@ export function createRuntime (deps: RuntimeDependencies): {
     }
     state.activeAccountId = accountId
     relayout()
+    focusDiagnostic.logActiveAccountChange(accountId)
 
     loadMessenger(entry, entry.loadState.failed)
 
@@ -697,6 +854,9 @@ export function createRuntime (deps: RuntimeDependencies): {
     } else if (saveResult.isReadOnly) {
       state.lastConfigSaveError = 'future-version-readonly'
     }
+    // Always send the updated account list so the renderer sees the cleared badge
+    // immediately; sendShellState only carries activeAccountId/loadState.
+    sendAccountList()
     sendShellState()
   }
 
@@ -705,6 +865,7 @@ export function createRuntime (deps: RuntimeDependencies): {
 
     state.showingHome = true
     state.activeAccountId = null
+    focusDiagnostic.logActiveAccountChange(null)
     for (const m of state.messengers.values()) {
       m.messenger.view.setVisible(false)
     }
@@ -724,6 +885,8 @@ export function createRuntime (deps: RuntimeDependencies): {
     const { window, shellView } = createAppWindow({ app, rendererRoot, portablePaths, preloadPath })
     state.mainWindow = window
     state.shellView = shellView
+    focusDiagnostic.bindWindow(window)
+    focusDiagnostic.bindShellView(shellView)
 
     window.on('resize', relayout)
     window.on('maximize', relayout)
@@ -809,6 +972,8 @@ export function createRuntime (deps: RuntimeDependencies): {
         destroyMessengerView(entry.messenger)
         state.messengers.delete(accountId)
       }
+      // Removing an account removes any pending new-message indicator for it.
+      state.accountBadges.delete(accountId)
       sendAccountList()
       return true
     })
@@ -837,6 +1002,7 @@ export function createRuntime (deps: RuntimeDependencies): {
       setAccountEnabled: updateAccountEnabled,
       addAccount: addNewAccount,
       renameAccount: updateAccountName,
+      moveAccount: moveAccountPosition,
       persistConfigPreference,
     })
   }
@@ -845,5 +1011,5 @@ export function createRuntime (deps: RuntimeDependencies): {
     attachRemoteGuards(messenger.view.webContents)
   }
 
-  return { createWindow, showAccount, showHome, sendAccountList, registerIpc, persistConfigPreference }
+  return { createWindow, showAccount, showHome, sendAccountList, registerIpc, persistConfigPreference, focusDiagnostic }
 }

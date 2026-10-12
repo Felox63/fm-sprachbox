@@ -1,24 +1,33 @@
 # Technischer Stand
 
-## Release 1.1
+## Release 1.2.0
 
-Mehrkonten, Tray, externe Links, Benachrichtigungen mit Datenschutz und Neue-Nachricht-Punkt sind unter Windows von Felix bestätigt. Der veröffentlichte Download ist die unveränderte, getestete Alpha-4-ZIP.
+Felix bestätigt unter Windows die neuen Kontovarianten, die gespeicherte Kontosortierung und den Telegram-Overlay-Fix: kein Fehler mehr feststellbar. Diese Abnahme stammt aus dem getesteten Vorgänger `1.2.0-telegram-fix.1`; der reguläre Build enthält denselben Funktionsstand mit konsistenter Version und aktualisierter Dokumentation.
 
-- Interne Appversion: `1.1.0-alpha.4` (Releasebezeichnung: 1.1).
-- 335 automatisierte Tests; separat 25 Electron-Produktionspfadprüfpunkte. Lint, Typecheck, Build und Paketprüfung bestanden.
-- SHA-256: `2063b8cb3ba7b1fd6f21031e75e3e09b3af86b8a5fa6732d9885c0e1d6821ded`.
+- Manifest, sichtbare Appversion und Release-Tag: `1.2.0`. Die Oberfläche liest die Version direkt aus dem Manifest statt aus einer zweiten fest codierten Angabe.
+- Frische Lint-/Typecheck-/Build-/Test- und Paketprüfung erfolgen vor Veröffentlichung; die konkreten Auslieferungsnachweise liegen als Release-Assets bei.
+- Source und Binary werden erstmals einem gemeinsamen Quelltag zugeordnet. Historische Releasearchive haben die unten beschriebenen Abweichungen.
+- WhatsApp/Telegram bleiben die einzigen neuen Standardkonten. Slack, Discord und WhatsApp Business werden manuell hinzugefügt; Sitzungen sind getrennt.
+- Telegram-Hintergrund-/Subframe-/Same-document-Ladeaktivität blendet die Editoransicht nicht mehr aus. Erststart, Retry, echter Mainframe-Dokumentwechsel und Fehler behalten das Overlay. Kein künstlicher Fokus-Repair.
+- Optionale lokale Diagnose ist standardmäßig aus; begrenzte Kategorien statt Texte, Zeichen oder Accountdaten. Kein automatischer Upload.
 
 ## Grenzen und offene technische Themen
 
-- **Quellzuordnung:** Der GitHub-Quellstand ist älter als der Download. Tags und automatische Sourcearchive reproduzieren die veröffentlichten ZIPs nicht exakt. Das wird in einem künftigen Release vereinheitlicht.
-- **Abhängigkeiten:** Historische Auditprüfung meldete 15 Findings (11 moderate, 2 high, 2 critical). Nicht gezielt behoben; keine aktuelle vollständige Sicherheitsfreigabe.
+- **SSO/OAuth:** Popups weiterhin gesperrt, Slack-SSO nicht bestätigt. Erfolgreiche Konto-Tests sind kein Nachweis sämtlicher Loginvarianten.
+- **Abhängigkeiten:** Offene Auditbefunde nicht im Rahmen dieses Releases behoben. Keine aktuelle vollständige Sicherheitsfreigabe; Details im Release-Nachweis.
 - **Benachrichtigungen:** Dokumentseitige Signale, keine vollständige Serviceworker-Abdeckung. Der Punkt ist nicht persistent und kein Gesamt-Ungelesenzähler.
-- **Distribution:** Keine signierte Windowsdistribution, keine automatischen Updates. Marken-/Assetprüfung offen; [Icon-Herkunft](../assets/service-icons/SOURCES.md).
+- **Distribution:** Keine signierte Windowsdistribution und keine automatischen Updates. Marken-/Assetprüfung offen; [Icon-Herkunft](../assets/service-icons/SOURCES.md).
 - **Profile:** Geräteübergreifende Login-Übernahme nicht garantiert. Entfernen eines Kontoeintrags löscht nicht dessen Profildaten; keine Oberfläche zur endgültigen Bereinigung.
+- **Kontosortierung:** Windows-Abnahme erfolgreich. Automatisierte Nachweise für reguläre Verschiebungen und Persistenz vorhanden; separater normaler Schreibfehlerpfad besitzt noch keine vollständige Runtime-Regression. Das wird nicht als behoben ausgegeben.
 - Mikrofon, Kamera und Bildschirmfreigabe sind nicht freigegeben.
+- Der konkrete Telegram-Unterladevorgang, der den früheren Overlay-Wechsel auslöste, wurde nicht separat identifiziert. Logfolge und Windows-Abnahme bestätigen den korrigierten Fokusverlustpfad, nicht sämtliche denkbaren Ursachen.
+
+## Historischer Release 1.1
+
+Mehrkonten, Tray, Links, Benachrichtigungen und Neue-Nachricht-Punkt unter Windows bestätigt. Download unveränderte Alpha-4-ZIP, interne Appversion `1.1.0-alpha.4`; damaliger GitHub-Quellstand älter als Binary. Historische Sourcearchive reproduzieren diese ZIP nicht exakt.
 
 ## Historischer Release 1.0
 
-Enthält den unveränderten Build `0.3.1-p3`: Mehrkonten und Kontenverwaltung, noch ohne die neuen Tray-/Benachrichtigungs-/Linkfunktionen. Bleibt als Rückweg verfügbar.
+Unveränderter Build `0.3.1-p3`: Mehrkonten und Verwaltung, noch ohne neue Tray-/Benachrichtigungs-/Linkfunktionen. Bleibt als Rückweg verfügbar.
 
 Funktionierende Tests und Windows-Abnahme sind keine unabhängige Sicherheits- oder Markenrechtszertifizierung.

@@ -23,6 +23,17 @@ describe('user-agent', () => {
     expect(ua).toContain('Mozilla/5.0')
   })
 
+  it('builds a clean UA for Slack, Discord and WhatsApp Business', () => {
+    const source: UserAgentSource = { chrome: '126.0.6478.63', electron: '44.5.0' }
+    for (const serviceId of ['slack', 'discord', 'whatsapp-business'] as const) {
+      const service = getServiceDefinition(serviceId)
+      const ua = buildServiceUserAgent(service, source)
+      expect(ua).toContain('Chrome/126.0.6478.63')
+      expect(ua).not.toContain('Electron')
+      expect(ua).toContain('Mozilla/5.0')
+    }
+  })
+
   it('keeps default UA for Telegram', () => {
     const source: UserAgentSource = { chrome: '126.0.6478.63', electron: '44.5.0' }
     const service = getServiceDefinition('telegram')

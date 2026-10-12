@@ -42,6 +42,8 @@ export function getChromeMajor (chromeVersion: string): number | null {
  * This is a narrow, service-specific workaround. It does NOT weaken
  * nodeIntegration, contextIsolation, sandbox or webSecurity.
  */
+const SERVICES_NEEDING_CUSTOM_UA: readonly ServiceId[] = ['whatsapp', 'slack', 'discord', 'whatsapp-business']
+
 export function buildServiceUserAgent (
   service: { id: ServiceId; url: string },
   source?: UserAgentSource,
@@ -52,15 +54,16 @@ export function buildServiceUserAgent (
   if (chromeMajor == null) return null
 
   // WhatsApp's gate is known to require a Chromium major version >= 100.
-  if (service.id === 'whatsapp') {
+  // Slack and Discord also reject Electron-tagged UAs in some flows, so we
+  // use the same clean, real-Chromium UA for these web apps. Telegram Web K
+  // does not currently gate on the absence of the Electron token.
+  if (SERVICES_NEEDING_CUSTOM_UA.includes(service.id)) {
     // A stable, widely accepted Windows Chrome UA shape. The platform string is
-    // intentionally generic because WhatsApp's gate only checks the Chrome major
+    // intentionally generic because the server-side gate only checks the Chrome major
     // version in the UA, not the OS. We never invent a Chrome version.
     return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${source.chrome} Safari/537.36`
   }
 
-  // For Telegram and other services we keep Electron's default UA. Telegram Web
-  // does not currently gate on the absence of the Electron token.
   return null
 }
 

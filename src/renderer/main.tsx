@@ -44,14 +44,23 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
     setPreferences: (_patch: Partial<{ minimizeToTray: boolean; notificationsEnabled: boolean; notificationHideContent: boolean }>) => {
       // no-op in browser preview
     },
-    onAccounts: (cb: (payload: { accounts: AccountRuntimeState[]; saveError?: 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly'; preferences: { minimizeToTray: boolean; notificationsEnabled: boolean; notificationHideContent: boolean } }) => void) => {
-      cb({ accounts: mockAccounts, preferences: { minimizeToTray: false, notificationsEnabled: true, notificationHideContent: true } })
+    moveAccount: (_accountId: string, _direction: 'up' | 'down') => {
+      // no-op in browser preview
+    },
+    toggleFocusDiagnostic: () => {
+      // no-op in browser preview
+    },
+    onAccounts: (cb: (payload: { accounts: AccountRuntimeState[]; saveError?: 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly'; preferences: { minimizeToTray: boolean; notificationsEnabled: boolean; notificationHideContent: boolean }; accountBadges?: string[] }) => void) => {
+      cb({ accounts: mockAccounts, preferences: { minimizeToTray: false, notificationsEnabled: true, notificationHideContent: true }, accountBadges: [] })
     },
     onShellState: (cb: (payload: { activeAccountId: string | null; loadState: { url: string; loading: boolean; failed: boolean; errorReason?: string; errorCode?: 'network' | 'crash' | 'abort' | 'unknown' } | null }) => void) => {
       window.addEventListener('active-account', (e: Event) => {
         const id = (e as CustomEvent).detail as string | null
         cb({ activeAccountId: id, loadState: null })
       })
+    },
+    onFocusDiagnosticState: (_cb: (state: { enabled: boolean; filePath: string | null; startedAt: number | null }) => void) => {
+      // no-op in browser preview
     },
   }
 }

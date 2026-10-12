@@ -17,6 +17,7 @@ interface ConfigChangePayload {
   accounts: AccountDefinition[]
   preferences: AppPreferences
   saveError?: 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly'
+  accountBadges?: string[]
 }
 
 interface RemoteViewLoadState {
@@ -40,8 +41,17 @@ export interface ElectronAPI {
   renameAccount: (accountId: string, displayName: string) => void
   removeAccount: (accountId: string) => Promise<boolean>
   setPreferences: (patch: Partial<AppPreferences>) => void
+  moveAccount: (accountId: string, direction: 'up' | 'down') => void
+  toggleFocusDiagnostic: () => void
   onAccounts: (callback: (payload: ConfigChangePayload) => void) => void
   onShellState: (callback: (payload: ShellStatePayload) => void) => void
+  onFocusDiagnosticState: (callback: (state: FocusDiagnosticState) => void) => void
+}
+
+interface FocusDiagnosticState {
+  enabled: boolean
+  filePath: string | null
+  startedAt: number | null
 }
 
 const api: ElectronAPI = {
@@ -52,11 +62,16 @@ const api: ElectronAPI = {
   renameAccount: (accountId, displayName) => ipcRenderer.send('rename-account', accountId, displayName),
   removeAccount: (accountId) => ipcRenderer.invoke('remove-account', accountId),
   setPreferences: (patch) => ipcRenderer.send('set-preferences', patch),
+  moveAccount: (accountId, direction) => ipcRenderer.send('move-account', accountId, direction),
+  toggleFocusDiagnostic: () => ipcRenderer.send('toggle-focus-diagnostic'),
   onAccounts: (callback) => {
     ipcRenderer.on('accounts', (_event, payload) => callback(payload))
   },
   onShellState: (callback) => {
     ipcRenderer.on('shell-state', (_event, payload) => callback(payload))
+  },
+  onFocusDiagnosticState: (callback) => {
+    ipcRenderer.on('fm-focus-diagnostic-state', (_event, state) => callback(state as FocusDiagnosticState))
   },
 }
 

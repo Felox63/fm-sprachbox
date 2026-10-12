@@ -15,6 +15,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --include=dev
+      - run: npx electron --version
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build

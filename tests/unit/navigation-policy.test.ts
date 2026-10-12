@@ -10,6 +10,9 @@ import { SUPPORTED_SERVICES } from '../../src/shared/services.js'
 
 const whatsapp = SUPPORTED_SERVICES.find((s) => s.id === 'whatsapp')!
 const telegram = SUPPORTED_SERVICES.find((s) => s.id === 'telegram')!
+const slack = SUPPORTED_SERVICES.find((s) => s.id === 'slack')!
+const discord = SUPPORTED_SERVICES.find((s) => s.id === 'discord')!
+const whatsappBusiness = SUPPORTED_SERVICES.find((s) => s.id === 'whatsapp-business')!
 
 describe('navigation-policy', () => {
   describe('isAllowedServiceNavigation', () => {
@@ -22,9 +25,45 @@ describe('navigation-policy', () => {
       expect(isAllowedServiceNavigation(whatsapp, 'about:blank')).toBe(true)
     })
 
+    it('allows Slack app and login origins', () => {
+      expect(isAllowedServiceNavigation(slack, 'https://app.slack.com/client')).toBe(true)
+      expect(isAllowedServiceNavigation(slack, 'https://slack.com/signin')).toBe(true)
+      expect(isAllowedServiceNavigation(slack, 'https://slack.com/ssb/signin')).toBe(true)
+    })
+
+    it('allows documented Slack workspace subdomains on the default HTTPS port', () => {
+      expect(isAllowedServiceNavigation(slack, 'https://acmeinc.slack.com/')).toBe(true)
+      expect(isAllowedServiceNavigation(slack, 'https://my-team.slack.com/messages')).toBe(true)
+    })
+
+    it('blocks Slack workspace lookalikes and malformed subdomains', () => {
+      expect(isAllowedServiceNavigation(slack, 'https://acmeinc-slack.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://acmeinc.slack.com.evil.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://slack.com.evil.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://.slack.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://foo.bar.slack.com/')).toBe(false)
+    })
+
+    it('blocks Slack workspace URLs on non-default ports or protocols', () => {
+      expect(isAllowedServiceNavigation(slack, 'http://acmeinc.slack.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://acmeinc.slack.com:8080/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://user:pass@acmeinc.slack.com/')).toBe(false)
+    })
+
+    it('allows Discord login and app origin', () => {
+      expect(isAllowedServiceNavigation(discord, 'https://discord.com/login')).toBe(true)
+      expect(isAllowedServiceNavigation(discord, 'https://discord.com/channels/@me')).toBe(true)
+    })
+
+    it('allows WhatsApp Business on the same origin as WhatsApp', () => {
+      expect(isAllowedServiceNavigation(whatsappBusiness, 'https://web.whatsapp.com/')).toBe(true)
+      expect(isAllowedServiceNavigation(whatsappBusiness, 'https://web.whatsapp.com/chat')).toBe(true)
+    })
+
     it('blocks a different service origin', () => {
       expect(isAllowedServiceNavigation(whatsapp, 'https://web.telegram.org/k/')).toBe(false)
       expect(isAllowedServiceNavigation(telegram, 'https://web.whatsapp.com/')).toBe(false)
+      expect(isAllowedServiceNavigation(slack, 'https://discord.com/')).toBe(false)
     })
 
     it('blocks lookalike hosts', () => {

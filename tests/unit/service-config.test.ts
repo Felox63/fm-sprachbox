@@ -11,6 +11,7 @@ import {
   addAccount,
   setSelectedAccountId,
   getAccountProfilePath,
+  moveAccount,
   MAX_CONFIG_FILE_BYTES,
   type ServiceConfigV2,
 } from '../../src/main/service-config.js'
@@ -331,6 +332,153 @@ describe('service-config v2', () => {
     expect(() => getAccountProfilePath('../../etc/passwd', paths)).toThrow()
     expect(() => getAccountProfilePath('', paths)).toThrow()
     expect(() => getAccountProfilePath('not-a-uuid', paths)).toThrow()
+  })
+
+  it('adds a new Slack account without creating a fake legacy id', () => {
+    const config = getDefaultServiceConfig()
+    const updated = addAccount(config, 'slack', 'Team')
+    expect(updated).not.toBeNull()
+    expect(updated!.accounts).toHaveLength(3)
+    const added = updated!.accounts.find((a) => a.serviceId === 'slack')
+    expect(added?.displayName).toBe('Team')
+    expect(added?.accountId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    expect(Object.values(LEGACY_ACCOUNT_IDS)).not.toContain(added?.accountId)
+  })
+
+  describe('moveAccount', () => {
+    it('moves an account up by swapping with the previous entry', () => {
+      let config = getDefaultServiceConfig()
+      config = addAccount(config, 'slack', 'Workspace') ?? config
+      expect(config.accounts.map((a) => a.serviceId)).toEqual(['whatsapp', 'telegram', 'slack'])
+      const slackId = config.accounts.find((a) => a.serviceId === 'slack')!.accountId
+      const moved = moveAccount(config, slackId, 'up')
+      expect(moved).not.toBeNull()
+      expect(moved!.accounts.map((a) => a.serviceId)).toEqual(['whatsapp', 'slack', 'telegram'])
+    })
+
+    it('moves an account down by swapping with the next entry', () => {
+      let config = getDefaultServiceConfig()
+      config = addAccount(config, 'slack', 'Workspace') ?? config
+      const whatsappId = config.accounts.find((a) => a.serviceId === 'whatsapp')!.accountId
+      const moved = moveAccount(config, whatsappId, 'down')
+      expect(moved).not.toBeNull()
+      expect(moved!.accounts.map((a) => a.serviceId)).toEqual(['telegram', 'whatsapp', 'slack'])
+    })
+
+    it('keeps disabled accounts in their position when moving neighbours', () => {
+      let config = getDefaultServiceConfig()
+      config = setAccountEnabled(config, LEGACY_ACCOUNT_IDS.whatsapp, false)
+      config = addAccount(config, 'slack', 'Workspace') ?? config
+      const telegramId = config.accounts.find((a) => a.serviceId === 'telegram')!.accountId
+      const moved = moveAccount(config, telegramId, 'down')
+      expect(moved).not.toBeNull()
+      expect(moved!.accounts.map((a) => ({ serviceId: a.serviceId, enabled: a.enabled })))
+        .toEqual([
+          { serviceId: 'whatsapp', enabled: false },
+          { serviceId: 'slack', enabled: true },
+          { serviceId: 'telegram', enabled: true },
+        ])
+    })
+
+    it('preserves all account fields except order', () => {
+      let config = getDefaultServiceConfig()
+      config = addAccount(config, 'telegram', 'Privat') ?? config
+      config = setSelectedAccountId(config, LEGACY_ACCOUNT_IDS.whatsapp)
+      const addedId = config.accounts.find((a) => a.displayName === 'Privat')!.accountId
+      const moved = moveAccount(config, addedId, 'up')
+      expect(moved).not.toBeNull()
+      expect(moved!.selectedAccountId).toBe(LEGACY_ACCOUNT_IDS.whatsapp)
+      const movedAccount = moved!.accounts.find((a) => a.accountId === addedId)
+      expect(movedAccount?.displayName).toBe('Privat')
+      expect(movedAccount?.serviceId).toBe('telegram')
+      expect(movedAccount?.enabled).toBe(true)
+    })
+
+    it('returns null for an unknown account id', () => {
+      const config = getDefaultServiceConfig()
+      expect(moveAccount(config, '00000000-0000-0000-0000-000000000000', 'up')).toBeNull()
+    })
+
+    it('returns null for an invalid direction', () => {
+      const config = getDefaultServiceConfig()
+      expect(moveAccount(config, LEGACY_ACCOUNT_IDS.whatsapp, 'left' as 'up')).toBeNull()
+    })
+
+    it('returns null when moving the first account up', () => {
+      const config = getDefaultServiceConfig()
+      expect(moveAccount(config, LEGACY_ACCOUNT_IDS.whatsapp, 'up')).toBeNull()
+    })
+
+    it('returns null when moving the last account down', () => {
+      let config = getDefaultServiceConfig()
+      config = addAccount(config, 'slack', 'Workspace') ?? config
+      const slackId = config.accounts.find((a) => a.serviceId === 'slack')!.accountId
+      expect(moveAccount(config, slackId, 'down')).toBeNull()
+    })
+
+    it('persists custom order through a save/load roundtrip', () => {
+      let config = getDefaultServiceConfig()
+      config = addAccount(config, 'slack', 'Workspace') ?? config
+      const telegramId = config.accounts.find((a) => a.serviceId === 'telegram')!.accountId
+      config = moveAccount(config, telegramId, 'down')!
+      saveServiceConfig(paths, config)
+      const loaded = loadServiceConfig(paths)
+      expect(loaded.config.accounts.map((a) => a.serviceId)).toEqual(['whatsapp', 'slack', 'telegram'])
+    })
+
+    it('does not allow moving across service boundaries with invalid id', () => {
+      const config = getDefaultServiceConfig()
+      expect(moveAccount(config, '../../etc/passwd', 'up')).toBeNull()
+    })
+  })
+
+  it('adds Discord and WhatsApp Business accounts manually', () => {
+    let config = getDefaultServiceConfig()
+    config = addAccount(config, 'discord', 'Server') ?? config
+    config = addAccount(config, 'whatsapp-business', 'Shop') ?? config
+    expect(config.accounts).toHaveLength(4)
+    expect(config.accounts.some((a) => a.serviceId === 'discord' && a.displayName === 'Server')).toBe(true)
+    expect(config.accounts.some((a) => a.serviceId === 'whatsapp-business' && a.displayName === 'Shop')).toBe(true)
+  })
+
+  it('fresh defaults do not auto-create new services', () => {
+    const config = getDefaultServiceConfig()
+    expect(config.accounts.map((a) => a.serviceId)).toEqual(['whatsapp', 'telegram'])
+  })
+
+  it('migrates a v1 config with unknown enabled ids as v1 services only', () => {
+    fs.writeFileSync(paths.configFile, JSON.stringify({ version: 1, enabled: ['whatsapp', 'slack', 'telegram'] }), 'utf8')
+    const result = loadServiceConfig(paths)
+    expect(result.config.accounts.map((a) => a.serviceId)).toEqual(['whatsapp', 'telegram'])
+  })
+
+  it('sanitizes displayName on rename for new services', () => {
+    let config = getDefaultServiceConfig()
+    config = addAccount(config, 'discord', '  Server\nName  ') ?? config
+    const added = config.accounts.find((a) => a.serviceId === 'discord')
+    expect(added).toBeDefined()
+    const updated = renameAccount(config, added!.accountId, '  New\nName  ')
+    expect(updated.accounts.find((a) => a.accountId === added!.accountId)?.displayName).toBe('NewName')
+  })
+
+  it('preserves a manually added Slack account through save/load roundtrip', () => {
+    let config = getDefaultServiceConfig()
+    config = addAccount(config, 'slack', 'Workspace') ?? config
+    saveServiceConfig(paths, config)
+    const loaded = loadServiceConfig(paths)
+    expect(loaded.config.accounts).toHaveLength(3)
+    const slack = loaded.config.accounts.find((a) => a.serviceId === 'slack')
+    expect(slack?.displayName).toBe('Workspace')
+    expect(slack?.enabled).toBe(true)
+  })
+
+  it('toggle account enabled updates new service accounts without touching id/path', () => {
+    let config = getDefaultServiceConfig()
+    config = addAccount(config, 'discord', 'Server') ?? config
+    const added = config.accounts.find((a) => a.serviceId === 'discord')
+    config = setAccountEnabled(config, added!.accountId, false)
+    expect(config.accounts.find((a) => a.serviceId === 'discord')?.enabled).toBe(false)
+    expect(config.accounts.find((a) => a.serviceId === 'whatsapp')?.enabled).toBe(true)
   })
 
   it('reports load-time default write failure without throwing', () => {

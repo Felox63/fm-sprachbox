@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import {
   type ServiceId,
-  ALL_SERVICE_IDS,
   isKnownServiceId,
   DEFAULT_ENABLED_SERVICE_IDS,
+  V1_SERVICE_IDS,
 } from '../shared/services.js'
 import {
   type AccountDefinition,
@@ -55,7 +55,9 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
 }
 
 export function getDefaultServiceConfig (): ServiceConfigV2 {
-  const accounts: AccountDefinition[] = ALL_SERVICE_IDS.map((serviceId) => ({
+  // Only the original v1 services have legacy accounts. New services are added
+  // manually via the UI and never created automatically on a fresh install.
+  const accounts: AccountDefinition[] = V1_SERVICE_IDS.map((serviceId) => ({
     accountId: LEGACY_ACCOUNT_IDS[serviceId],
     serviceId,
     displayName: '',
@@ -161,7 +163,9 @@ function isValidServiceConfigV2 (parsed: unknown): parsed is ServiceConfigV2 {
 
 function migrateV1ToV2 (parsed: Record<string, unknown>): ServiceConfigV2 {
   const enabledIds = normalizeEnabledIds(parsed.enabled)
-  const accounts: AccountDefinition[] = ALL_SERVICE_IDS.map((serviceId) => ({
+  // v1 configs only knew whatsapp and telegram. Ignore any unknown ids that
+  // may have been injected; new services are added through the UI, not migration.
+  const accounts: AccountDefinition[] = V1_SERVICE_IDS.map((serviceId) => ({
     accountId: LEGACY_ACCOUNT_IDS[serviceId],
     serviceId,
     displayName: '',
@@ -354,6 +358,43 @@ export function setAppPreferences (
   return {
     ...config,
     preferences: normalizePreferences({ ...(config.preferences ?? {}), ...patch }),
+  }
+}
+
+export type MoveAccountDirection = 'up' | 'down'
+
+function validateMoveDirection (value: unknown): MoveAccountDirection | null {
+  if (value === 'up' || value === 'down') return value
+  return null
+}
+
+/**
+ * Move an account one position up or down in the persisted order. The accounts
+ * array itself is the source of truth; disabled accounts keep their position and
+ * the service grouping is not enforced. Returns null when the id or direction is
+ * invalid or the move would cross an array boundary.
+ */
+export function moveAccount (
+  config: ServiceConfigV2,
+  accountId: string,
+  direction: MoveAccountDirection,
+): ServiceConfigV2 | null {
+  if (!isValidAccountId(accountId)) return null
+  if (validateMoveDirection(direction) == null) return null
+
+  const index = config.accounts.findIndex((a) => a.accountId === accountId)
+  if (index === -1) return null
+
+  const targetIndex = direction === 'up' ? index - 1 : index + 1
+  if (targetIndex < 0 || targetIndex >= config.accounts.length) return null
+
+  const nextAccounts = [...config.accounts]
+  const [moved] = nextAccounts.splice(index, 1)
+  nextAccounts.splice(targetIndex, 0, moved)
+
+  return {
+    ...config,
+    accounts: nextAccounts,
   }
 }
 

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import './app.css'
 import type { AccountRuntimeState, AccountDefinition, ServiceId } from '../shared/accounts.js'
 import { getAccountLabel, toAccountRuntimeState } from '../shared/accounts.js'
+import { getServiceDefinition, SUPPORTED_SERVICES } from '../shared/services.js'
+import { version } from '../../package.json'
 
 interface ConfigChangePayload {
   accounts: AccountDefinition[]
@@ -11,6 +13,7 @@ interface ConfigChangePayload {
     notificationHideContent: boolean
   }
   saveError?: 'none' | 'load-write-failed' | 'toggle-write-failed' | 'save-write-failed' | 'future-version-readonly'
+  accountBadges?: string[]
 }
 
 interface AppPreferences {
@@ -32,6 +35,12 @@ interface ShellStatePayload {
   loadState: RemoteViewLoadState | null
 }
 
+interface FocusDiagnosticState {
+  enabled: boolean
+  filePath: string | null
+  startedAt: number | null
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -42,13 +51,14 @@ declare global {
       renameAccount: (accountId: string, displayName: string) => void
       removeAccount: (accountId: string) => Promise<boolean>
       setPreferences: (patch: Partial<AppPreferences>) => void
+      moveAccount: (accountId: string, direction: 'up' | 'down') => void
+      toggleFocusDiagnostic: () => void
       onAccounts: (callback: (payload: ConfigChangePayload) => void) => void
       onShellState: (callback: (payload: ShellStatePayload) => void) => void
+      onFocusDiagnosticState: (callback: (state: FocusDiagnosticState) => void) => void
     }
   }
 }
-
-const SERVICE_ORDER: ServiceId[] = ['whatsapp', 'telegram']
 
 function formatLoadError (state: RemoteViewLoadState): string {
   switch (state.errorCode) {
@@ -77,11 +87,6 @@ function formatSaveError (saveError?: ConfigChangePayload['saveError']): string 
   }
 }
 
-function accountSortKey (a: AccountRuntimeState): number {
-  const serviceIndex = SERVICE_ORDER.indexOf(a.serviceId)
-  return serviceIndex * 1000 + (a.enabled ? 0 : 500)
-}
-
 function App (): React.ReactElement {
   const [accounts, setAccounts] = useState<AccountRuntimeState[]>([])
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null)
@@ -96,13 +101,16 @@ function App (): React.ReactElement {
   })
   const [addServiceId, setAddServiceId] = useState<ServiceId | ''>('whatsapp')
   const [addName, setAddName] = useState('')
+  const [accountBadges, setAccountBadges] = useState<Set<string>>(new Set())
+  const [focusDiagnostic, setFocusDiagnostic] = useState<FocusDiagnosticState>({ enabled: false, filePath: null, startedAt: null })
   const editInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     window.electronAPI.onAccounts((payload) => {
       const mapped = payload.accounts.map(toAccountRuntimeState)
-      setAccounts(mapped.sort((a, b) => accountSortKey(a) - accountSortKey(b)))
+      setAccounts(mapped)
       setSaveError(payload.saveError ?? 'none')
+      setAccountBadges(new Set(payload.accountBadges ?? []))
       if (payload.preferences != null) {
         setPreferencesState(payload.preferences)
       }
@@ -110,6 +118,9 @@ function App (): React.ReactElement {
     window.electronAPI.onShellState((payload) => {
       setActiveAccountId(payload.activeAccountId)
       setLoadState(payload.loadState)
+    })
+    window.electronAPI.onFocusDiagnosticState((state) => {
+      setFocusDiagnostic(state)
     })
   }, [])
 
@@ -185,11 +196,14 @@ function App (): React.ReactElement {
                 height={20}
               />
               <span className="service-item-label">{getAccountLabel(account)}</span>
+              {accountBadges.has(account.accountId) && (
+                <span className="service-item-badge" aria-label="Neue Nachricht" title="Neue Nachricht" />
+              )}
             </button>
           ))}
         </nav>
         <footer className="sidebar-footer">
-          v0.3.1-p3
+          v{version}
         </footer>
       </aside>
       {activeAccountId == null && (
@@ -207,7 +221,7 @@ function App (): React.ReactElement {
               <p className="home-hint">Noch keine Konten vorhanden. Füge ein Konto hinzu, um loszulegen.</p>
             )}
             <ul className="service-toggles">
-              {accounts.map((account) => (
+              {accounts.map((account, index) => (
                 <li key={account.accountId} className="service-toggle-row">
                   <div className="service-toggle-info">
                     <img
@@ -247,11 +261,33 @@ function App (): React.ReactElement {
                           <strong>{getAccountLabel(account)}</strong>
                         </button>
                       )}
-                      <span className="service-toggle-desc">{account.serviceId === 'whatsapp' ? 'WhatsApp Web' : 'Telegram Web K'}</span>
+                      <span className="service-toggle-desc">{getServiceDefinition(account.serviceId).shortDescription}</span>
                     </div>
                   </div>
-                  <button type="button" className="secondary-button" title={`${getAccountLabel(account)} umbenennen`} aria-label={`${getAccountLabel(account)} umbenennen`} onClick={() => startRename(account)}>✎</button>
-                  <button type="button" className="secondary-button" title={`${getAccountLabel(account)} entfernen`} aria-label={`${getAccountLabel(account)} entfernen`} onClick={() => { void window.electronAPI.removeAccount(account.accountId) }}>🗑</button>
+                  <div className="account-actions">
+                    <button
+                      type="button"
+                      className="secondary-button move-button"
+                      title={`${getAccountLabel(account)} nach oben verschieben`}
+                      aria-label={`${getAccountLabel(account)} nach oben verschieben`}
+                      disabled={index === 0}
+                      onClick={() => window.electronAPI.moveAccount(account.accountId, 'up')}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button move-button"
+                      title={`${getAccountLabel(account)} nach unten verschieben`}
+                      aria-label={`${getAccountLabel(account)} nach unten verschieben`}
+                      disabled={index === accounts.length - 1}
+                      onClick={() => window.electronAPI.moveAccount(account.accountId, 'down')}
+                    >
+                      ↓
+                    </button>
+                    <button type="button" className="secondary-button" title={`${getAccountLabel(account)} umbenennen`} aria-label={`${getAccountLabel(account)} umbenennen`} onClick={() => startRename(account)}>✎</button>
+                    <button type="button" className="secondary-button" title={`${getAccountLabel(account)} entfernen`} aria-label={`${getAccountLabel(account)} entfernen`} onClick={() => { void window.electronAPI.removeAccount(account.accountId) }}>🗑</button>
+                  </div>
                   <input
                     id={`toggle-${account.accountId}`}
                     type="checkbox"
@@ -270,8 +306,9 @@ function App (): React.ReactElement {
                   value={addServiceId}
                   onChange={(e) => setAddServiceId(e.target.value as ServiceId)}
                 >
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="telegram">Telegram</option>
+                  {SUPPORTED_SERVICES.map((service) => (
+                    <option key={service.id} value={service.id}>{service.label}</option>
+                  ))}
                 </select>
                 <input
                   id="add-name"
@@ -331,6 +368,31 @@ function App (): React.ReactElement {
                   />
                 </li>
               </ul>
+            </section>
+            <section className="diagnostic-section" aria-labelledby="diagnostic-heading">
+              <h2 id="diagnostic-heading">Fokus-Diagnose</h2>
+              <p className="diagnostic-desc">
+                Nur bei Problemen mit Fokus/Eingabe aktivieren. Es werden keine Nachrichteninhalte,
+                Tastenwerte oder URLs aufgezeichnet – nur grobe Ereigniskategorien.
+              </p>
+              <button
+                type="button"
+                className={focusDiagnostic.enabled ? 'danger-button' : 'secondary-button'}
+                onClick={() => window.electronAPI.toggleFocusDiagnostic()}
+              >
+                {focusDiagnostic.enabled ? 'Diagnose stoppen' : 'Diagnose starten'}
+              </button>
+              {focusDiagnostic.enabled && focusDiagnostic.filePath != null && (
+                <div className="diagnostic-active">
+                  <span className="diagnostic-pulse" aria-hidden="true" />
+                  <span>Aufzeichnung läuft … Datei: {focusDiagnostic.filePath}</span>
+                </div>
+              )}
+              {!focusDiagnostic.enabled && focusDiagnostic.filePath != null && (
+                <div className="diagnostic-stopped">
+                  <span>Letzte Datei: {focusDiagnostic.filePath}</span>
+                </div>
+              )}
             </section>
           </div>
         </main>
