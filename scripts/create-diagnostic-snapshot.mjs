@@ -10,7 +10,8 @@ const __dirname = path.dirname(__filename)
 void __dirname
 
 const projectRoot = process.cwd()
-const version = '1.2.0-telegram-fix.1'
+const version = process.env.SPRACHBOX_BUILD_VERSION ?? '1.2.0-telegram-fix.1'
+if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version)) throw new Error('Invalid snapshot version')
 const snapshotName = `FM-Sprachbox-Windows-${version}`
 const snapshotRoot = path.join(projectRoot, 'artifacts', 'windows', snapshotName)
 

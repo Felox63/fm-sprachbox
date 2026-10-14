@@ -2450,6 +2450,55 @@ describe('Telegram links through actual runtime account actions', () => {
   })
 })
 
+describe('native audio-only microphone permissions without settings switch', () => {
+  let root: string
+  beforeEach(() => { root = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), 'audio-permissions-')) })
+  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }) })
+
+  it.each(['legacy-whatsapp', 'legacy-telegram'])('allows native audio for the enabled live account %s', id => {
+    const { runtime, state } = makeRuntime({ portablePaths: pathsForMessengerTests(root) })
+    runtime.createWindow(); runtime.showAccount(id)
+    const m = state.messengers.get(id)!.messenger
+    const wc = m.webContents as unknown as FakeWebContents
+    const url = id === 'legacy-telegram' ? 'https://web.telegram.org/k/' : 'https://web.whatsapp.com/'
+    wc.setURL(url)
+    const request = vi.mocked(m.session.setPermissionRequestHandler).mock.calls[0][0]!
+    const check = vi.mocked(m.session.setPermissionCheckHandler).mock.calls[0][0]!
+    const callback = vi.fn()
+    request(m.webContents, 'media', callback, { requestingUrl: url, isMainFrame: true, mediaTypes: ['audio'] } as Electron.MediaAccessPermissionRequest)
+    expect(callback).toHaveBeenCalledWith(true)
+    expect(check(m.webContents, 'media', new URL(url).origin, { isMainFrame: true, mediaType: 'audio' })).toBe(true)
+  })
+
+  it.each(['video', 'mixed', 'empty', 'subframe', 'foreign', 'disabled', 'unregistered', 'destroyed', 'detached', 'disposed', 'stale', 'blank', 'credentials', 'http', 'display'])('denies %s capture through the actual registered handlers', mode => {
+    const { runtime, state } = makeRuntime({ portablePaths: pathsForMessengerTests(root) })
+    runtime.createWindow(); runtime.showAccount('legacy-telegram')
+    const m = state.messengers.get('legacy-telegram')!.messenger
+    const wc = m.webContents as unknown as FakeWebContents
+    wc.setURL('https://web.telegram.org/k/')
+    let url = 'https://web.telegram.org/k/'
+    if (mode === 'foreign') url = 'https://web.whatsapp.com/'
+    if (mode === 'disabled') state.serviceConfig.accounts.find(a => a.accountId === 'legacy-telegram')!.enabled = false
+    if (mode === 'unregistered') state.messengers.delete('legacy-telegram')
+    if (mode === 'destroyed') wc.destroyed = true
+    if (mode === 'detached') Object.defineProperty(wc.mainFrame, 'detached', { value: true })
+    if (mode === 'disposed') Object.defineProperty(wc.mainFrame, 'url', { get: () => { throw new Error('disposed') } })
+    if (mode === 'stale') wc.getURL = () => 'https://web.whatsapp.com/'
+    if (mode === 'blank') wc.setURL('about:blank')
+    if (mode === 'credentials') url = 'https://user:pass@web.telegram.org/k/'
+    if (mode === 'http') url = 'http://web.telegram.org/k/'
+    const request = vi.mocked(m.session.setPermissionRequestHandler).mock.calls[0][0]!
+    const check = vi.mocked(m.session.setPermissionCheckHandler).mock.calls[0][0]!
+    const callback = vi.fn()
+    const types = mode === 'mixed' ? ['audio', 'video'] : mode === 'video' ? ['video'] : mode === 'empty' ? [] : ['audio']
+    const permission = mode === 'display' ? 'display-capture' : 'media'
+    request(m.webContents, permission, callback, { requestingUrl: url, isMainFrame: mode !== 'subframe', mediaTypes: types } as Electron.MediaAccessPermissionRequest)
+    expect(callback).toHaveBeenCalledWith(false)
+    expect(() => check(m.webContents, permission, url, { isMainFrame: mode !== 'subframe', mediaType: mode === 'mixed' || mode === 'video' ? 'video' : mode === 'empty' ? 'unknown' : 'audio' })).not.toThrow()
+    expect(check(m.webContents, permission, url, { isMainFrame: mode !== 'subframe', mediaType: mode === 'mixed' || mode === 'video' ? 'video' : mode === 'empty' ? 'unknown' : 'audio' })).toBe(false)
+  })
+})
+
 describe('messenger loading overlay preserves editor focus boundaries', () => {
   let root: string
   beforeEach(() => { root = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), 'overlay-runtime-')) })

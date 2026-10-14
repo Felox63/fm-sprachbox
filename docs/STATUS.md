@@ -1,6 +1,16 @@
 # Technischer Stand
 
-## Release 1.2.0
+## Release 1.2.1
+
+Felix bestätigt die Mikrofon-Tests des Windows-Testkandidaten `1.3.0-microphone.1`. Release `1.2.1` enthält denselben geprüften Mikrofon-Funktionsstand, neu gebaut mit einheitlicher stabiler Paket- und Appversion. Die Funktionsabnahme des Testkandidaten wird nicht als erneuter Windows-Test des neu versionierten Pakets dargestellt.
+
+- Audio-only-Media-Anfragen sind für registrierte, aktivierte Konten und deren eigene erlaubte HTTPS-Ursprünge zugelassen. Beide Permission-Handler prüfen die konkrete lebende WebContents-Zuordnung und den Hauptframe; fremde Ursprünge, Subframes und veraltete oder zerstörte Frames werden abgewiesen.
+- Kein zusätzlicher Mikrofonschalter oder App-Zustimmungsdialog. Der vertrauenswürdige Messenger darf Audio anfordern; die App startet selbst keine Aufnahme. Aufnahme/Stop im Messenger und Windows-Mikrofonrechte bleiben maßgeblich. Die native `getUserMedia`-/MediaStream-Laufzeit wird nicht überschrieben.
+- Kamera, gemischte Audio-/Video-Anfragen und Bildschirmfreigabe bleiben gesperrt. Mikrofon-Funktion unter Windows bestätigt; separate vollständige Sprach-/Videoanrufabnahme nicht behauptet.
+- Unabhängiger read-only Review des Funktionsstands bestanden. 435 Unit-Tests in 17 Dateien sowie nativer Electron-Fake-Audio-Smoke bestanden: tatsächliche Tracks live → ended, Kamera/gemischt/deaktiviertes Konto abgewiesen und erneutes Audio zugelassen. Der Smoke nutzt kein physisches Mikrofon und ersetzt nicht die Windows-Abnahme.
+- Neue Release-Build-, Paket-, Versions- und CI-Nachweise werden unter den Release-Assets veröffentlicht. Offene Sicherheits-/Dependency-Befunde und übrige Grenzen bleiben bestehen.
+
+## Übernommener Funktionsstand aus Release 1.2.0
 
 Felix bestätigt unter Windows die neuen Kontovarianten, die gespeicherte Kontosortierung und den Telegram-Overlay-Fix: kein Fehler mehr feststellbar. Diese Abnahme stammt aus dem getesteten Vorgänger `1.2.0-telegram-fix.1`; der reguläre Build enthält denselben Funktionsstand mit konsistenter Version und aktualisierter Dokumentation.
 
@@ -19,7 +29,7 @@ Felix bestätigt unter Windows die neuen Kontovarianten, die gespeicherte Kontos
 - **Distribution:** Keine signierte Windowsdistribution und keine automatischen Updates. Marken-/Assetprüfung offen; [Icon-Herkunft](../assets/service-icons/SOURCES.md).
 - **Profile:** Geräteübergreifende Login-Übernahme nicht garantiert. Entfernen eines Kontoeintrags löscht nicht dessen Profildaten; keine Oberfläche zur endgültigen Bereinigung.
 - **Kontosortierung:** Windows-Abnahme erfolgreich. Automatisierte Nachweise für reguläre Verschiebungen und Persistenz vorhanden; separater normaler Schreibfehlerpfad besitzt noch keine vollständige Runtime-Regression. Das wird nicht als behoben ausgegeben.
-- Mikrofon, Kamera und Bildschirmfreigabe sind nicht freigegeben.
+- Kamera und Bildschirmfreigabe sind nicht freigegeben. Die Mikrofon-Abnahme deckt die von Felix getesteten Aufnahmefälle ab, nicht jede Login- oder Anrufvariante sämtlicher optionaler Dienste.
 - Der konkrete Telegram-Unterladevorgang, der den früheren Overlay-Wechsel auslöste, wurde nicht separat identifiziert. Logfolge und Windows-Abnahme bestätigen den korrigierten Fokusverlustpfad, nicht sämtliche denkbaren Ursachen.
 
 ## Historischer Release 1.1

@@ -4,7 +4,7 @@
 
 Ein Projekt von **Felix**, entwickelt mit Unterstützung von **KI (Hermes)**.
 
-[**Windows herunterladen · Version 1.2.0**](https://github.com/Felox63/fm-sprachbox/releases/latest) · [Ideen & Fehler](https://github.com/Felox63/fm-sprachbox/issues) · [Mitwirken](CONTRIBUTING.md)
+[**Windows herunterladen · Version 1.2.1**](https://github.com/Felox63/fm-sprachbox/releases/latest) · [Ideen & Fehler](https://github.com/Felox63/fm-sprachbox/issues) · [Mitwirken](CONTRIBUTING.md)
 
 ## Das kann die App
 
@@ -14,6 +14,7 @@ Ein Projekt von **Felix**, entwickelt mit Unterstützung von **KI (Hermes)**.
 - Telegram-Ladeoverlay nur bei echten Dokumentwechseln statt bei Hintergrund-Ladeaktivität
 - Optional im Tray weiterlaufen; Windows-Benachrichtigungen mit oder ohne Inhalt
 - Neue-Nachricht-Punkt pro Konto und bestätigtes Öffnen externer Links
+- Mikrofon für Sprachnachrichten – Aufnahme und Stop direkt im Messenger, ohne zusätzlichen App-Schalter; Windows-Mikrofonrechte bleiben erforderlich
 - Portable Nutzung ohne Installation; Daten im lokalen `data`-Ordner
 - Optionale lokale Fokusdiagnose, standardmäßig aus, ohne Nachrichtentexte oder getippte Zeichen
 
@@ -21,7 +22,7 @@ WhatsApp Business nutzt WhatsApp Web mit eigener Kontositzung, keine Business-AP
 
 ## Loslegen
 
-1. Unter [Releases](https://github.com/Felox63/fm-sprachbox/releases/latest) **`FM-Sprachbox-1.2.0-win64.zip`** herunterladen.
+1. Unter [Releases](https://github.com/Felox63/fm-sprachbox/releases/latest) **`FM-Sprachbox-1.2.1-win64.zip`** herunterladen.
 2. Vollständig entpacken und **`FM - Sprachbox.exe`** starten.
 3. Konten hinzufügen und anmelden.
 

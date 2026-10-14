@@ -28,21 +28,6 @@ export interface CreateMessengerViewOptions {
   isAccountActive?: () => boolean
 }
 
-/**
- * Permissions that a messenger service may legitimately request for normal
- * operation. All other permissions are denied by default (fail-closed).
- *
- * Currently no permission is granted automatically. A future, explicit
- * user-consent flow (bound to origin, frame and the exact WebContents) may
- * allow service-typical permissions such as `media` (voice messages) or
- * `clipboard-sanitized-write` (pasting into chats). Until then every request,
- * including `display-capture`, is denied.
- */
-const ALLOWED_PERMISSIONS: readonly string[] = []
-
-function isAllowedPermission (permission: string): boolean {
-  return ALLOWED_PERMISSIONS.includes(permission)
-}
 
 function isServiceOrigin (service: ServiceDefinition, origin: string): boolean {
   if (!isTrustedSourceUrl(origin)) return false
@@ -56,8 +41,9 @@ function isServiceOrigin (service: ServiceDefinition, origin: string): boolean {
  * - webContents must be the exact remote view we created for this service.
  * - The request must come from the service's own main-frame origin
  *   (requestingOrigin / top-level URL). Subframes or foreign origins are denied.
- * - No permission is granted automatically. A future explicit user-consent flow
- *   may allow a short allowlist of service-typical permissions.
+ * - Audio-only media is permitted for registered, enabled accounts. The OS and
+ *   native getUserMedia lifecycle retain control; no capture interception.
+ * - Camera, mixed audio/video and all other permissions remain denied.
  */
 function makePermissionDecision (
   service: ServiceDefinition,
@@ -65,17 +51,24 @@ function makePermissionDecision (
   webContents: WebContents | null,
   permission: string,
   requestingOrigin: string,
-  isCheck: boolean,
-  isMainFrame?: boolean,
+  isMainFrame: boolean | undefined,
+  isAccountActive: () => boolean,
+  audioOnly: boolean,
 ): boolean {
-  if (!isAllowedPermission(permission)) return false
-  if (webContents == null || webContents !== ownWebContents) return false
-  // Only the top-level main frame of the exact remote view we created may ask
-  // for a permission. Missing frame information is treated as "not main frame"
-  // and denied.
-  if (isMainFrame !== true) return false
-  if (!isServiceOrigin(service, requestingOrigin)) return false
-  return true
+  try {
+    if (permission !== 'media' || !audioOnly || isMainFrame !== true) return false
+    if (webContents == null || webContents !== ownWebContents || webContents.isDestroyed()) return false
+    if (!isAccountActive()) return false
+    const frame = webContents.mainFrame
+    if (frame == null || frame.detached || frame.parent != null) return false
+    const urls = [requestingOrigin, webContents.getURL(), frame.url].map(value => new URL(value))
+    if (urls.some(url => url.protocol !== 'https:' || url.username !== '' || url.password !== '' ||
+      !isAllowedServiceNavigation(service, url.href))) return false
+    return urls.every(url => url.origin === urls[0].origin)
+  } catch {
+    // Detached frames and disposed WebContents getters fail closed.
+    return false
+  }
 }
 
 export function createMessengerView (
@@ -105,28 +98,23 @@ export function createMessengerView (
 
   const view = new WebContentsView({ webPreferences })
   const ownWebContents = view.webContents
+  const isAccountActive = options?.isAccountActive ?? (() => false)
 
   // Set permission handlers before any loadURL call so unknown requests are
   // denied by default (fail-closed). The handlers compare the requesting
   // origin/frame against the service's own origin and the exact WebContents
   // created above.
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    let requestingOrigin = ''
-    try {
-      requestingOrigin = new URL(details.requestingUrl).origin
-    } catch {
-      // If we cannot parse the request origin, deny.
-      callback(false)
-      return
-    }
+    const mediaTypes = (details as Electron.MediaAccessPermissionRequest).mediaTypes
     const allow = makePermissionDecision(
       service,
       ownWebContents,
       webContents,
       permission,
-      requestingOrigin,
-      false,
+      details.requestingUrl,
       details.isMainFrame,
+      isAccountActive,
+      Array.isArray(mediaTypes) && mediaTypes.length === 1 && mediaTypes[0] === 'audio',
     )
     callback(allow)
   })
@@ -137,8 +125,9 @@ export function createMessengerView (
       webContents,
       permission,
       requestingOrigin,
-      true,
       details.isMainFrame,
+      isAccountActive,
+      details.mediaType === 'audio',
     )
   })
 
